@@ -28,7 +28,7 @@
 
             if (args.Length >= 0)
             {
-               folderPath = args[0];
+                folderPath = args[0];
             }
 
             if (folderPath == null)
@@ -85,7 +85,7 @@
                     try
                     {
                         // Uncomment this if you want to add a limit to the amount of rows to read per CSV file
-                        if (parser.LineNumber == 10000)
+                        if (parser.LineNumber == 1000)
                         {
                             return entitiesToInsert;
                         }
@@ -123,15 +123,11 @@
         /// <returns></returns>
         private List<TableBatchOperation> GetTableBatchOperations(IGrouping<string, ITableEntity> group)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"Inserting entities for batch {group.Key}");
-            Console.ForegroundColor = ConsoleColor.Gray;
-
             var operationsList = new List<TableBatchOperation>();
             var entities = group.ToList();
-            var chunkSize = 100;       
+            var chunkSize = 100;
 
-            while(entities.Any())
+            while (entities.Any())
             {
                 TableBatchOperation batchOperation = new TableBatchOperation();
                 var chunk = entities.Take(chunkSize).ToList();
@@ -157,6 +153,7 @@
         /// <returns></returns>
         private async Task InsertBatchOperationsAsync(CloudTableClient tableClient, IEnumerable<TableBatchOperation> batches)
         {
+            var counter = 0;
             CloudTable table = tableClient.GetTableReference("flights");
             table.CreateIfNotExists();
 
@@ -167,6 +164,7 @@
                 {
                     try
                     {
+                        counter = +batch.Count;
                         Stopwatch watch = new Stopwatch();
                         watch.Start();
                         await table.ExecuteBatchAsync(batch);
@@ -195,6 +193,7 @@
                     }
                 });
             });
+            Console.WriteLine($"Total inserted rows: {counter}");
         }
 
         /// <summary>
@@ -206,30 +205,22 @@
         public async Task Run(CloudTableClient tableClient, string folderPath)
         {
             var filesToImport = GetFiles(folderPath);
-            List<IGrouping<string, ITableEntity>> groupedList;
-            ConcurrentBag<TableBatchOperation> batchInsertOperations;
+            var groupedList = new List<IGrouping<string, ITableEntity>>();
+            var batchInsertOperations = new ConcurrentBag<TableBatchOperation>();
 
             foreach (string filePath in filesToImport)
             {
-                batchInsertOperations = new ConcurrentBag<TableBatchOperation>();
-                groupedList = new List<IGrouping<string, ITableEntity>>();
-
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"Uploaded from {filePath}");
-                Console.ForegroundColor = ConsoleColor.Gray;
-
                 groupedList = ReadCsvFile(filePath).GroupBy(o => o.PartitionKey).ToList();
                 groupedList.AsParallel().ForAll(group =>
                 {
-                    var range = GetTableBatchOperations(group);
-                    range.ForEach(x => { batchInsertOperations.Add(x); });
+                    var batch = GetTableBatchOperations(group);
+                    batch.ForEach(x => batchInsertOperations.Add(x));
                 });
-           
-                await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
-            }
 
-            Console.WriteLine("Press any key to end...");
-            Console.ReadLine();
+                await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
+                Console.WriteLine("Press any key to end...");
+                Console.ReadLine();
+            }
         }
     }
 }
