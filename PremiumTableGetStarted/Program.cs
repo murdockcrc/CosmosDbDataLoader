@@ -10,7 +10,6 @@
     using System.IO;
     using System.Threading.Tasks;
     using System.Collections.Concurrent;
-    using Microsoft.VisualBasic;
     using Microsoft.VisualBasic.FileIO;
 
     /// <summary>
@@ -86,7 +85,7 @@
                     try
                     {
                         // Uncomment this if you want to add a limit to the amount of rows to read per CSV file
-                        if (parser.LineNumber == 1000)
+                        if (parser.LineNumber == 10000)
                         {
                             return entitiesToInsert;
                         }
@@ -136,7 +135,7 @@
             {
                 TableBatchOperation batchOperation = new TableBatchOperation();
                 var chunk = entities.Take(chunkSize).ToList();
-                chunk.AsParallel().ForAll(entity =>
+                chunk.ForEach(entity =>
                 {
                     try
                     {
@@ -156,10 +155,8 @@
         /// <param name="tableClient"></param>
         /// <param name="batches"></param>
         /// <returns></returns>
-        private async Task InsertBatchOperationsAsync(CloudTableClient tableClient, IList<TableBatchOperation> batches)
+        private async Task InsertBatchOperationsAsync(CloudTableClient tableClient, IEnumerable<TableBatchOperation> batches)
         {
-            var counter = 0;
-
             CloudTable table = tableClient.GetTableReference("flights");
             table.CreateIfNotExists();
 
@@ -167,13 +164,9 @@
             {
                 try
                 {
-                    counter += batch.Count;
-                    Console.WriteLine($"Batches counter: {counter}");
-
                     Stopwatch watch = new Stopwatch();
                     watch.Start();
-                    var task = table.ExecuteBatchAsync(batch);
-                    await task;
+                    await table.ExecuteBatchAsync(batch);
                     watch.Stop();
                     Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
                     watch.Reset();
@@ -210,11 +203,11 @@
         {
             var filesToImport = GetFiles(folderPath);
             List<IGrouping<string, ITableEntity>> groupedList;
-            List<TableBatchOperation> batchInsertOperations;
+            ConcurrentBag<TableBatchOperation> batchInsertOperations;
 
             foreach (string filePath in filesToImport)
             {
-                batchInsertOperations = new List<TableBatchOperation>();
+                batchInsertOperations = new ConcurrentBag<TableBatchOperation>();
                 groupedList = new List<IGrouping<string, ITableEntity>>();
 
                 Console.ForegroundColor = ConsoleColor.Yellow;
@@ -224,7 +217,8 @@
                 groupedList = ReadCsvFile(filePath).GroupBy(o => o.PartitionKey).ToList();
                 groupedList.AsParallel().ForAll(group =>
                 {
-                    batchInsertOperations.AddRange(GetTableBatchOperations(group));
+                    var range = GetTableBatchOperations(group);
+                    range.AsParallel().ForAll(x => { batchInsertOperations.Add(x); });
                 });
            
                 await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
