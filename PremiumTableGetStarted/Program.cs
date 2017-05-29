@@ -30,6 +30,10 @@
             {
                 folderPath = args[0];
             }
+            if (args.Length >= 1 && args[1] == "Standard")
+            {
+                connectionString = ConfigurationManager.AppSettings["StandardStorageConnectionString"];
+            }
 
             if (folderPath == null)
             {
