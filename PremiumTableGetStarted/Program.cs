@@ -153,46 +153,46 @@
         /// <returns></returns>
         private async Task InsertBatchOperationsAsync(CloudTableClient tableClient, IEnumerable<TableBatchOperation> batches)
         {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("Inserting batches into data base");
+            Console.ForegroundColor = ConsoleColor.Gray;
+
             var counter = 0;
             CloudTable table = tableClient.GetTableReference("flights");
             table.CreateIfNotExists();
 
-            var list = batches.ToList();
-            await Task.Run(() =>
+            foreach (var batch in batches)
             {
-                list.ForEach(async batch =>
+                try
                 {
-                    try
+                    counter += batch.Count;
+                    Stopwatch watch = new Stopwatch();
+                    watch.Start();
+                    await table.ExecuteBatchAsync(batch);
+                    watch.Stop();
+                    Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
+                    watch.Reset();
+                }
+                catch (StorageException storageException)
+                {
+                    switch (storageException.RequestInformation.HttpStatusCode)
                     {
-                        counter = +batch.Count;
-                        Stopwatch watch = new Stopwatch();
-                        watch.Start();
-                        await table.ExecuteBatchAsync(batch);
-                        watch.Stop();
-                        Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
-                        watch.Reset();
+                        case 409:
+                            // Entity already exists, ignore
+                            break;
+                        case 429:
+                            System.Threading.Thread.Sleep(1000);
+                            await table.ExecuteBatchAsync(batch);
+                            break;
+                        default:
+                            throw storageException;
                     }
-                    catch (StorageException storageException)
-                    {
-                        switch (storageException.RequestInformation.HttpStatusCode)
-                        {
-                            case 409:
-                                // Entity already exists, ignore
-                                break;
-                            case 429:
-                                System.Threading.Thread.Sleep(1000);
-                                await table.ExecuteBatchAsync(batch);
-                                break;
-                            default:
-                                throw storageException;
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        throw e;
-                    }
-                });
-            });
+                }
+                catch (Exception e)
+                {
+                    throw e;
+                }
+            }
             Console.WriteLine($"Total inserted rows: {counter}");
         }
 
