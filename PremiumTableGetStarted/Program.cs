@@ -160,37 +160,41 @@
             CloudTable table = tableClient.GetTableReference("flights");
             table.CreateIfNotExists();
 
-            foreach(var batch in batches)
+            var list = batches.ToList();
+            await Task.Run(() =>
             {
-                try
+                list.ForEach(async batch =>
                 {
-                    Stopwatch watch = new Stopwatch();
-                    watch.Start();
-                    await table.ExecuteBatchAsync(batch);
-                    watch.Stop();
-                    Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
-                    watch.Reset();
-                }
-                catch (StorageException storageException)
-                {
-                    switch (storageException.RequestInformation.HttpStatusCode)
+                    try
                     {
-                        case 409:
-                            // Entity already exists, ignore
-                            break;
-                        case 429:
-                            System.Threading.Thread.Sleep(1000);
-                            await table.ExecuteBatchAsync(batch);
-                            break;
-                        default:
-                            throw storageException;
+                        Stopwatch watch = new Stopwatch();
+                        watch.Start();
+                        await table.ExecuteBatchAsync(batch);
+                        watch.Stop();
+                        Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
+                        watch.Reset();
                     }
-                }
-                catch(Exception e)
-                {
-                    throw e;
-                }
-            }
+                    catch (StorageException storageException)
+                    {
+                        switch (storageException.RequestInformation.HttpStatusCode)
+                        {
+                            case 409:
+                                // Entity already exists, ignore
+                                break;
+                            case 429:
+                                System.Threading.Thread.Sleep(1000);
+                                await table.ExecuteBatchAsync(batch);
+                                break;
+                            default:
+                                throw storageException;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        throw e;
+                    }
+                });
+            });
         }
 
         /// <summary>
@@ -218,7 +222,7 @@
                 groupedList.AsParallel().ForAll(group =>
                 {
                     var range = GetTableBatchOperations(group);
-                    range.AsParallel().ForAll(x => { batchInsertOperations.Add(x); });
+                    range.ForEach(x => { batchInsertOperations.Add(x); });
                 });
            
                 await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
