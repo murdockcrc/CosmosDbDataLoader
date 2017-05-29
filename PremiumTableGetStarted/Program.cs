@@ -86,10 +86,10 @@
                     try
                     {
                         // Uncomment this if you want to add a limit to the amount of rows to read per CSV file
-                        //if (parser.LineNumber == 1000)
-                        //{
-                        //    return entitiesToInsert;
-                        //}
+                        if (parser.LineNumber == 1000)
+                        {
+                            return entitiesToInsert;
+                        }
 
                         Console.WriteLine($"Processing line {parser.LineNumber}");
                         var fields = parser.ReadFields().Take(numberOfColumns);
@@ -123,10 +123,6 @@
         /// <returns></returns>
         private List<TableBatchOperation> GetTableBatchOperations(IGrouping<string, ITableEntity> group)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"Inserting entities for batch {group.Key}");
-            Console.ForegroundColor = ConsoleColor.Gray;
-
             var operationsList = new List<TableBatchOperation>();
             var entities = group.ToList();
             var chunkSize = 100;       
@@ -158,7 +154,6 @@
         private async Task InsertBatchOperationsAsync(CloudTableClient tableClient, IList<TableBatchOperation> batches)
         {
             var counter = 0;
-
             CloudTable table = tableClient.GetTableReference("flights");
             table.CreateIfNotExists();
 
@@ -166,9 +161,6 @@
             {
                 try
                 {
-                    counter += batch.Count;
-                    Console.WriteLine($"Batches counter: {counter}");
-
                     Stopwatch watch = new Stopwatch();
                     watch.Start();
                     var task = table.ExecuteBatchAsync(batch);
@@ -176,6 +168,7 @@
                     watch.Stop();
                     Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
                     watch.Reset();
+                    counter += batch.Count;
                 }
                 catch (StorageException storageException)
                 {
@@ -195,8 +188,9 @@
                 catch(Exception e)
                 {
                     throw e;
-                }
+                }                
             }
+            Console.WriteLine($"Total inserted rows: {counter}");
         }
 
         /// <summary>
@@ -209,24 +203,26 @@
         {
             var filesToImport = GetFiles(folderPath);
             var groupedList = new List<IGrouping<string, ITableEntity>>();
-            var batchInsertOperations = new List<TableBatchOperation>();
+            var batchInsertOperations = new ConcurrentBag<TableBatchOperation>();
 
             foreach (string filePath in filesToImport)
             {
-
-                batchInsertOperations = new List<TableBatchOperation>();
-                groupedList = new List<IGrouping<string, ITableEntity>>();
-
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine($"Uploaded from {filePath}");
                 Console.ForegroundColor = ConsoleColor.Gray;
 
                 groupedList = ReadCsvFile(filePath).GroupBy(o => o.PartitionKey).ToList();
-                foreach(IGrouping<string, ITableEntity> group in groupedList)
+                groupedList.AsParallel().ForAll(group =>
                 {
-                    batchInsertOperations.AddRange(GetTableBatchOperations(group));
-                }
-                await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
+                    var batch = GetTableBatchOperations(group);
+                    batch.ForEach(x => batchInsertOperations.Add(x));
+                });
+                //foreach (IGrouping<string, ITableEntity> group in groupedList)
+                //{
+                //    var batch = GetTableBatchOperations(group);
+                //    batch.ForEach(x => batchInsertOperations.Add(x));
+                //}
+                await InsertBatchOperationsAsync(tableClient, batchInsertOperations.ToList());
             }
 
             Console.WriteLine("Press any key to end...");
