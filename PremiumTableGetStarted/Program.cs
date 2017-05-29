@@ -75,7 +75,7 @@
             var entitiesToInsert = new List<ITableEntity>();
             using (TextFieldParser parser = new TextFieldParser(filePath))
             {
-                int numberOfColumns = 50;
+                int numberOfColumns = 50;   //number of columns to take from the CSV schema
                 parser.TextFieldType = FieldType.Delimited;
                 parser.SetDelimiters(",");
 
@@ -86,17 +86,18 @@
                     try
                     {
                         // Uncomment this if you want to add a limit to the amount of rows to read per CSV file
-                        //if (parser.LineNumber == 1000)
-                        //{
-                        //    return entitiesToInsert;
-                        //}
+                        if (parser.LineNumber == 1000)
+                        {
+                            return entitiesToInsert;
+                        }
 
                         Console.WriteLine($"Processing line {parser.LineNumber}");
+
                         var fields = parser.ReadFields().Take(numberOfColumns);
                         var guid = Guid.NewGuid().ToString();
-                        var entity = new DynamicTableEntity(fields.ElementAt(14), guid);
+                        var entity = new DynamicTableEntity(fields.ElementAt(14), guid);    // Uses airport IATA code as partition key
+
                         var properties = new Dictionary<string, EntityProperty>();
-                        //Processing row
                         for (int i = 0; i < numberOfColumns; i++)
                         {
                             properties.Add(headers.ElementAt(i),
@@ -135,14 +136,14 @@
             {
                 TableBatchOperation batchOperation = new TableBatchOperation();
                 var chunk = entities.Take(chunkSize).ToList();
-                foreach (ITableEntity entity in chunk)
+                chunk.AsParallel().ForAll(entity =>
                 {
                     try
                     {
                         batchOperation.Insert(entity);
                     }
                     catch { }
-                }
+                });
                 operationsList.Add(batchOperation);
                 entities = entities.Skip(chunkSize).ToList();
             }
@@ -208,12 +209,11 @@
         public async Task Run(CloudTableClient tableClient, string folderPath)
         {
             var filesToImport = GetFiles(folderPath);
-            var groupedList = new List<IGrouping<string, ITableEntity>>();
-            var batchInsertOperations = new List<TableBatchOperation>();
+            List<IGrouping<string, ITableEntity>> groupedList;
+            List<TableBatchOperation> batchInsertOperations;
 
             foreach (string filePath in filesToImport)
             {
-
                 batchInsertOperations = new List<TableBatchOperation>();
                 groupedList = new List<IGrouping<string, ITableEntity>>();
 
@@ -222,10 +222,11 @@
                 Console.ForegroundColor = ConsoleColor.Gray;
 
                 groupedList = ReadCsvFile(filePath).GroupBy(o => o.PartitionKey).ToList();
-                foreach(IGrouping<string, ITableEntity> group in groupedList)
+                groupedList.AsParallel().ForAll(group =>
                 {
                     batchInsertOperations.AddRange(GetTableBatchOperations(group));
-                }
+                });
+           
                 await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
             }
 
