@@ -88,6 +88,7 @@
                         // Uncomment this if you want to add a limit to the amount of rows to read per CSV file
                         if (parser.LineNumber == 10000)
                         {
+
                             return entitiesToInsert;
                         }
 
