@@ -10,7 +10,8 @@
     using System.IO;
     using System.Threading.Tasks;
     using System.Collections.Concurrent;
-    using Microsoft.VisualBasic.FileIO;
+    using System.Globalization;
+    using PremiumTableGetStarted.Models;
 
     /// <summary>
     /// This sample program shows how to use the Azure storage SDK to work with premium tables (created using the Azure Cosmos DB service)
@@ -72,51 +73,54 @@
         private List<ITableEntity> ReadCsvFile(string filePath)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("Retrieving entities to insert");
+            Console.WriteLine($"Reading CSV file {filePath}");
             Console.ForegroundColor = ConsoleColor.Gray;
 
+            int numberOfColumns = 20;   //number of columns to take from the CSV schema
             var entitiesToInsert = new List<ITableEntity>();
-            using (TextFieldParser parser = new TextFieldParser(filePath))
+
+            IEnumerable<string> flights = File.ReadAllLines(filePath)
+                .Skip(1)
+                .ToList();
+
+            flights.ToList().ForEach(flight =>
             {
-                int numberOfColumns = 50;   //number of columns to take from the CSV schema
-                parser.TextFieldType = FieldType.Delimited;
-                parser.SetDelimiters(",");
-
-                var headers = parser.ReadFields().Take(numberOfColumns);
-
-                while (!parser.EndOfData)
+                string[] tokenized = flight.Split(',')
+                    .Take(numberOfColumns)
+                    .Select(item => item.Replace("\"", ""))
+                    .ToArray();
+                try
                 {
-                    try
+                    var entity = new FlightFactModel(tokenized[14], Guid.NewGuid().ToString())
                     {
-                        // Uncomment this if you want to add a limit to the amount of rows to read per CSV file
-                        if (parser.LineNumber == 1000)
-                        {
-                            return entitiesToInsert;
-                        }
-
-                        Console.WriteLine($"Processing line {parser.LineNumber}");
-
-                        var fields = parser.ReadFields().Take(numberOfColumns);
-                        var guid = Guid.NewGuid().ToString();
-                        var entity = new DynamicTableEntity(fields.ElementAt(14), guid);    // Uses airport IATA code as partition key
-
-                        var properties = new Dictionary<string, EntityProperty>();
-                        for (int i = 0; i < numberOfColumns; i++)
-                        {
-                            properties.Add(headers.ElementAt(i),
-                                new EntityProperty(fields.ElementAt(i)));
-                        }
-                        entity.Properties = properties;
-                        entitiesToInsert.Add(entity);
-                    }
-                    catch
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine($"ERROR: failed to parse line {parser.LineNumber}");
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                    }
+                        Year = Convert.ToInt32(tokenized[0]),
+                        Quarter = Convert.ToInt32(tokenized[1]),
+                        Month = Convert.ToInt32(tokenized[2]),
+                        DayOfMonth = Convert.ToInt32(tokenized[3]),
+                        DayOfWeek = Convert.ToInt32(tokenized[4]),
+                        FlightDate = DateTime.Parse(tokenized[5], CultureInfo.InvariantCulture),
+                        UniqueCarrier = tokenized[6],
+                        AirlineID = tokenized[7],
+                        Carrier = tokenized[8],
+                        TailNum = tokenized[9],
+                        FlightNum = tokenized[10],
+                        OriginAirportID = Convert.ToInt32(tokenized[11]),
+                        OriginAirportSeqID = Convert.ToInt32(tokenized[12]),
+                        OriginCityMarketID = Convert.ToInt32(tokenized[13]),
+                        Origin = tokenized[14],
+                        OriginCityName = tokenized[15],
+                        OriginState = tokenized[16],
+                        OriginStateFips = tokenized[17],
+                        OriginStateName = tokenized[18],
+                        OriginWac = tokenized[19]
+                    };
+                    entitiesToInsert.Add(entity);
                 }
-            }
+                catch (Exception e)
+                {
+
+                }
+            });
             return entitiesToInsert;
         }
 
