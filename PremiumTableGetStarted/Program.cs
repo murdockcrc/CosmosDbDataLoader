@@ -116,7 +116,7 @@
                     };
                     entitiesToInsert.Add(entity);
                 }
-                catch (Exception e)
+                catch
                 {
 
                 }
