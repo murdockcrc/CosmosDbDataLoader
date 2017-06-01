@@ -162,7 +162,7 @@
         private async Task InsertBatchOperationsAsync(CloudTableClient tableClient, IEnumerable<TableBatchOperation> batches)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("Inserting batches into data base");
+            Console.WriteLine("Inserting batches into database");
             Console.ForegroundColor = ConsoleColor.Gray;
 
             var counter = 0;
@@ -189,6 +189,10 @@
                             // Entity already exists, ignore
                             break;
                         case 429:
+                            Console.ForegroundColor = ConsoleColor.DarkMagenta;
+                            Console.WriteLine($"HTTP 429: Throttled");
+                            Console.ForegroundColor = ConsoleColor.Gray;
+
                             System.Threading.Thread.Sleep(1000);
                             await table.ExecuteBatchAsync(batch);
                             break;
@@ -219,6 +223,11 @@
             foreach (string filePath in filesToImport)
             {
                 groupedList = ReadCsvFile(filePath).GroupBy(o => o.PartitionKey).ToList();
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"Building table batch insert operations for {groupedList.Count} groups");
+                Console.ForegroundColor = ConsoleColor.Gray;
+
                 groupedList.AsParallel().ForAll(group =>
                 {
                     var batch = GetTableBatchOperations(group);
@@ -226,7 +235,7 @@
                 });
 
                 await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
-                Console.WriteLine("Press any key to end...");
+                Console.WriteLine("Press Enter to end...");
                 Console.ReadLine();
             }
         }
