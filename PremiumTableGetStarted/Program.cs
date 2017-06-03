@@ -207,6 +207,7 @@
                         Console.ForegroundColor = ConsoleColor.Gray;
 
                         System.Threading.Thread.Sleep(1000);
+                        await InsertBatchOperationsAsync(tableClient, batches);
                         break;
                     default:
                         throw storageException;
