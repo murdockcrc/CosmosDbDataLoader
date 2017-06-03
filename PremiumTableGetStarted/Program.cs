@@ -248,10 +248,10 @@
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("Inserting batches into database");
                 Console.ForegroundColor = ConsoleColor.Gray;
-                await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
-                Console.WriteLine("Press Enter to end...");
-                Console.ReadLine();
+                await InsertBatchOperationsAsync(tableClient, batchInsertOperations);                
             }
+            Console.WriteLine("Press Enter to end...");
+            Console.ReadLine();
         }
     }
 }
