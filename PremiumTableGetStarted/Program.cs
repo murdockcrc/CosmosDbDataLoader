@@ -78,13 +78,14 @@
 
             int numberOfColumns = 20;   //number of columns to take from the CSV schema
             var entitiesToInsert = new List<ITableEntity>();
+            int maxNumberOfRowToRead = 1000;
 
             IEnumerable<string> flights = File.ReadAllLines(filePath)
                 .Skip(1)
                 .ToList();
 
             flights.ToList().ForEach(flight =>
-            {
+            {                
                 string[] tokenized = flight.Split(',')
                     .Take(numberOfColumns)
                     .Select(item => item.Replace("\"", ""))
@@ -121,6 +122,10 @@
 
                 }
             });
+            if (entitiesToInsert.Count >= maxNumberOfRowToRead)
+            {
+                return entitiesToInsert.Take(maxNumberOfRowToRead).ToList();
+            }
             return entitiesToInsert;
         }
 
@@ -161,51 +166,48 @@
         /// <returns></returns>
         private async Task InsertBatchOperationsAsync(CloudTableClient tableClient, IEnumerable<TableBatchOperation> batches)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("Inserting batches into database");
-            Console.ForegroundColor = ConsoleColor.Gray;
-
+            if(!batches.Any())
+            {
+                return;
+            }
             var counter = 0;
             CloudTable table = tableClient.GetTableReference("flights");
-            table.CreateIfNotExists();
+            var batch = batches.FirstOrDefault();
 
-            foreach (var batch in batches)
+            counter += batch.Count;
+            Stopwatch watch = new Stopwatch();
+            watch.Start();
+
+            try
             {
-                try
+                await table.ExecuteBatchAsync(batch);
+                watch.Stop();
+                Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
+            }
+            catch (StorageException storageException)
+            {
+                switch (storageException.RequestInformation.HttpStatusCode)
                 {
-                    counter += batch.Count;
-                    Stopwatch watch = new Stopwatch();
-                    watch.Start();
-                    await table.ExecuteBatchAsync(batch);
-                    watch.Stop();
-                    Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
-                    watch.Reset();
-                }
-                catch (StorageException storageException)
-                {
-                    switch (storageException.RequestInformation.HttpStatusCode)
-                    {
-                        case 409:
-                            // Entity already exists, ignore
-                            break;
-                        case 429:
-                            Console.ForegroundColor = ConsoleColor.DarkMagenta;
-                            Console.WriteLine($"HTTP 429: Throttled");
-                            Console.ForegroundColor = ConsoleColor.Gray;
+                    case 409:
+                        // Entity already exists, ignore
+                        break;
+                    case 429:
+                        Console.ForegroundColor = ConsoleColor.DarkMagenta;
+                        Console.WriteLine($"HTTP 429: Throttled");
+                        Console.ForegroundColor = ConsoleColor.Gray;
 
-                            System.Threading.Thread.Sleep(1000);
-                            await table.ExecuteBatchAsync(batch);
-                            break;
-                        default:
-                            throw storageException;
-                    }
-                }
-                catch (Exception e)
-                {
-                    throw e;
+                        System.Threading.Thread.Sleep(1000);
+                        break;
+                    default:
+                        throw storageException;
                 }
             }
+            catch (Exception e)
+            {
+                throw e;
+            }
             Console.WriteLine($"Total inserted rows: {counter}");
+            await InsertBatchOperationsAsync(tableClient, batches.Skip(1));
         }
 
         /// <summary>
@@ -234,6 +236,9 @@
                     batch.ForEach(x => batchInsertOperations.Add(x));
                 });
 
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("Inserting batches into database");
+                Console.ForegroundColor = ConsoleColor.Gray;
                 await InsertBatchOperationsAsync(tableClient, batchInsertOperations);
                 Console.WriteLine("Press Enter to end...");
                 Console.ReadLine();
