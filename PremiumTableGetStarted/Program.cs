@@ -170,19 +170,29 @@
             {
                 return;
             }
-            var counter = 0;
-            CloudTable table = tableClient.GetTableReference("flights");
-            var batch = batches.FirstOrDefault();
 
-            counter += batch.Count;
+            var counter = 0;
+            var batchSize = 10;
+            CloudTable table = tableClient.GetTableReference("flights");
+            var tasks = new List<Task<IList<TableResult>>>();
+
+            batches
+                .Take(batchSize)
+                .ToList()
+                .ForEach(batch =>
+                {
+                    counter += batch.Count;
+                    tasks.Add(table.ExecuteBatchAsync(batch));
+                });
+
             Stopwatch watch = new Stopwatch();
             watch.Start();
 
             try
             {
-                await table.ExecuteBatchAsync(batch);
+                await Task.WhenAll(tasks);
                 watch.Stop();
-                Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {batch.Count}");
+                Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-ddThh:mm:ssK")}, {watch.ElapsedMilliseconds.ToString()}, {counter}");
             }
             catch (StorageException storageException)
             {
@@ -206,8 +216,7 @@
             {
                 throw e;
             }
-            Console.WriteLine($"Total inserted rows: {counter}");
-            await InsertBatchOperationsAsync(tableClient, batches.Skip(1));
+            await InsertBatchOperationsAsync(tableClient, batches.Skip(batchSize));
         }
 
         /// <summary>
