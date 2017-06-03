@@ -122,10 +122,10 @@
 
                 }
             });
-            if (entitiesToInsert.Count >= maxNumberOfRowToRead)
-            {
-                return entitiesToInsert.Take(maxNumberOfRowToRead).ToList();
-            }
+            //if (entitiesToInsert.Count >= maxNumberOfRowToRead)
+            //{
+            //    return entitiesToInsert.Take(maxNumberOfRowToRead).ToList();
+            //}
             return entitiesToInsert;
         }
 
